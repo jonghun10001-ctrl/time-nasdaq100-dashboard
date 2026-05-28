@@ -9,6 +9,7 @@ GitHub Actions에서 호출: python update_data.py
 
 import json
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -16,7 +17,7 @@ import pandas as pd
 from etf_analyzer import (
     scan_all_holdings, fetch_all_prices,
     HOLDINGS_CACHE_PATH, PRICES_CACHE_PATH,
-    DATA_DIR,
+    DATA_DIR, SCAN_LOG_PATH,
 )
 
 
@@ -117,10 +118,28 @@ def export_dashboard_data(holdings: pd.DataFrame, prices: pd.DataFrame):
     print(f"  {len(ticker_data)} tickers, {len(dates_available)} dates")
 
 
+def clear_recent_empty_logs(days=5):
+    """최근 N영업일 내 'empty' 기록을 삭제해서 재시도하게 한다."""
+    if not SCAN_LOG_PATH.exists():
+        return
+    scan_log = json.loads(SCAN_LOG_PATH.read_text())
+    cutoff = (datetime.now() - timedelta(days=days + 2)).strftime("%Y-%m-%d")
+    removed = []
+    for date_str in list(scan_log.keys()):
+        if date_str >= cutoff and scan_log[date_str] == "empty":
+            del scan_log[date_str]
+            removed.append(date_str)
+    if removed:
+        SCAN_LOG_PATH.write_text(json.dumps(scan_log, ensure_ascii=False))
+        print(f"Cleared {len(removed)} recent empty logs for retry: {removed}")
+
+
 def main():
     print("=" * 60)
     print("  TIME 나스닥100 ETF — 일일 데이터 업데이트")
     print("=" * 60)
+
+    clear_recent_empty_logs(days=5)
 
     print("\n[1/3] 보유종목 스캔 (신규 날짜만)...")
     holdings = scan_all_holdings(resume=True, delay=0.15)
@@ -128,8 +147,33 @@ def main():
         print("ERROR: No holdings data.")
         sys.exit(1)
 
-    print(f"\n[2/3] 종가 수집 (신규 종목만)...")
+    print(f"\n[2/3] 종가 수집...")
     prices = fetch_all_prices(holdings, resume=True)
+
+    # 기존 캐시의 마지막 날짜 이후 가격이 빠져있을 수 있으므로 최근 7일 갱신
+    try:
+        import yfinance as yf
+        tickers = list(prices.columns)
+        if tickers:
+            recent_start = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
+            recent_end = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            print(f"  Refreshing recent prices ({recent_start} ~ {recent_end})...")
+            data = yf.download(" ".join(tickers), start=recent_start, end=recent_end,
+                               progress=False, auto_adjust=True)
+            if not data.empty:
+                if isinstance(data.columns, pd.MultiIndex):
+                    closes = data["Close"]
+                else:
+                    closes = data[["Close"]].rename(columns={"Close": tickers[0]})
+                closes.index = pd.to_datetime(closes.index)
+                prices.update(closes)
+                new_rows = closes.loc[closes.index.difference(prices.index)]
+                if not new_rows.empty:
+                    prices = pd.concat([prices, new_rows]).sort_index()
+                prices.to_csv(PRICES_CACHE_PATH)
+                print(f"  Prices updated through {prices.index[-1].strftime('%Y-%m-%d')}")
+    except Exception as e:
+        print(f"  Warning: recent price refresh failed: {e}")
 
     print(f"\n[3/3] 대시보드 데이터 생성...")
     export_dashboard_data(holdings, prices)
