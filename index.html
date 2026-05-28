@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TIME 미국나스닥100 — 보유종목 분석</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.umd.min.js"></script>
+<script src="./data/dashboard_data.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --red: #f85149; --yellow: #d29922;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); }
+  .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+
+  header { text-align: center; padding: 32px 0 24px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+  header h1 { font-size: 24px; font-weight: 600; margin-bottom: 4px; }
+  header .sub { color: var(--muted); font-size: 14px; }
+
+  .stats-bar { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin-bottom: 28px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 22px; text-align: center; min-width: 140px; }
+  .stat-card .value { font-size: 22px; font-weight: 700; color: var(--accent); }
+  .stat-card .label { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .tabs { display: flex; gap: 0; margin-bottom: 24px; border-bottom: 2px solid var(--border); }
+  .tab { padding: 10px 24px; cursor: pointer; font-size: 14px; font-weight: 500; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all .15s; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .search-row { display: flex; gap: 12px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+  .search-row input, .search-row select { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 10px 14px; border-radius: 6px; font-size: 14px; outline: none; }
+  .search-row input:focus { border-color: var(--accent); }
+  .search-row input[type="date"] { width: 180px; }
+  .search-row select { width: 260px; }
+  .search-row button { background: var(--accent); color: #fff; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; }
+  .search-row button:hover { opacity: .85; }
+
+  .info-cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+  .info-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; flex: 1; min-width: 140px; }
+  .info-card .ic-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .info-card .ic-value { font-size: 18px; font-weight: 600; margin-top: 2px; }
+  .info-card .ic-value.green { color: var(--green); }
+  .info-card .ic-value.red { color: var(--red); }
+
+  .chart-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; position: relative; }
+  .chart-wrap canvas { max-height: 500px; }
+
+  .date-nav { display: flex; gap: 8px; align-items: center; }
+  .date-nav button { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .date-nav button:hover { border-color: var(--accent); }
+  .date-nav .date-label { font-size: 16px; font-weight: 600; min-width: 130px; text-align: center; }
+
+  .bar-legend { display: flex; gap: 16px; justify-content: center; margin-top: 12px; font-size: 12px; color: var(--muted); }
+  .bar-legend span { display: flex; align-items: center; gap: 4px; }
+  .bar-legend .dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+  #noDataMsg { text-align: center; padding: 60px; color: var(--muted); font-size: 16px; }
+
+  .range-btns { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .range-btns button { background: var(--surface); border: 1px solid var(--border); color: var(--muted); padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; transition: all .15s; }
+  .range-btns button:hover { border-color: var(--accent); color: var(--text); }
+  .range-btns button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .period-btns { display: flex; gap: 6px; margin-bottom: 20px; }
+  .period-btns button { background: var(--surface); border: 1px solid var(--border); color: var(--muted); padding: 8px 18px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; transition: all .15s; }
+  .period-btns button:hover { border-color: var(--accent); color: var(--text); }
+  .period-btns button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .rank-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .rank-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .rank-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+  .rank-card h3 .arrow-up { color: var(--green); }
+  .rank-card h3 .arrow-dn { color: var(--red); }
+  .rank-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .rank-table th { text-align: left; color: var(--muted); font-weight: 500; padding: 4px 8px; border-bottom: 1px solid var(--border); font-size: 11px; }
+  .rank-table td { padding: 6px 8px; border-bottom: 1px solid rgba(48,54,61,.3); }
+  .rank-table tr:hover { background: rgba(88,166,255,.05); }
+  .rank-table .val-up { color: var(--green); font-weight: 600; }
+  .rank-table .val-dn { color: var(--red); font-weight: 600; }
+  .rank-period-info { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+
+  @media (max-width: 900px) { .rank-grid { grid-template-columns: 1fr; } }
+
+  @media (max-width: 700px) {
+    .stats-bar { gap: 8px; }
+    .stat-card { min-width: 100px; padding: 10px 14px; }
+    .info-cards { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>TIME 미국나스닥100 액티브 (426030)</h1>
+    <div class="sub">상장일 2022-05-11 이후 보유종목 비중 분석 대시보드</div>
+  </header>
+
+  <div class="stats-bar" id="statsBar"></div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="ticker">종목 검색</div>
+    <div class="tab" data-tab="date">날짜 검색</div>
+    <div class="tab" data-tab="rank">증감 순위</div>
+  </div>
+
+  <!-- Ticker Search Panel -->
+  <div class="panel active" id="panel-ticker">
+    <div class="search-row">
+      <select id="tickerSelect"><option value="">종목을 선택하세요...</option></select>
+      <button onclick="searchTicker()">검색</button>
+    </div>
+    <div id="tickerInfo" class="info-cards" style="display:none;"></div>
+    <div id="tickerChartWrap" style="display:none;">
+      <div class="range-btns" id="rangeBtns">
+        <button onclick="setRange(30)" data-range="30">1개월</button>
+        <button onclick="setRange(90)" data-range="90">3개월</button>
+        <button onclick="setRange(180)" data-range="180">6개월</button>
+        <button onclick="setRange(365)" data-range="365">1년</button>
+        <button onclick="setRange(730)" data-range="730">2년</button>
+        <button onclick="setRange(1095)" data-range="1095">3년</button>
+        <button onclick="setRange(0)" data-range="0" class="active">전체</button>
+        <button onclick="resetZoom()" style="margin-left:auto;">↺ 리셋</button>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="tickerChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Date Search Panel -->
+  <div class="panel" id="panel-date">
+    <div class="search-row">
+      <div class="date-nav">
+        <button onclick="navDate(-1)">← 이전</button>
+        <input type="date" id="dateInput">
+        <button onclick="navDate(1)">다음 →</button>
+      </div>
+      <button onclick="searchDate()">검색</button>
+    </div>
+    <div id="dateInfo" class="info-cards" style="display:none;"></div>
+    <div class="chart-wrap" id="dateChartWrap" style="display:none;">
+      <canvas id="dateChart"></canvas>
+    </div>
+    <div class="bar-legend" id="barLegend" style="display:none;">
+      <span><span class="dot" style="background:var(--accent)"></span> 주식</span>
+      <span><span class="dot" style="background:var(--yellow)"></span> 현금</span>
+      <span><span class="dot" style="background:var(--muted)"></span> 선물</span>
+    </div>
+    <div id="stackChartWrap" style="display:none; margin-top:20px;">
+      <div class="range-btns" id="stackRangeBtns">
+        <span style="color:var(--muted);font-size:12px;margin-right:8px;">비중 구성 추이</span>
+        <button onclick="setStackRange(90)">3개월</button>
+        <button onclick="setStackRange(180)">6개월</button>
+        <button onclick="setStackRange(365)" class="active" data-range="365">1년</button>
+        <button onclick="setStackRange(0)">전체</button>
+        <select id="stackTopN" onchange="renderStackChart()" style="margin-left:auto;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:4px;font-size:12px;">
+          <option value="5">TOP 5</option>
+          <option value="10">TOP 10</option>
+          <option value="15" selected>TOP 15</option>
+          <option value="20">TOP 20</option>
+          <option value="30">TOP 30</option>
+          <option value="40">TOP 40</option>
+        </select>
+      </div>
+      <div class="chart-wrap" style="margin-top:8px;">
+        <canvas id="stackChart" style="max-height:500px;"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ranking Panel -->
+  <div class="panel" id="panel-rank">
+    <div class="period-btns" id="periodBtns">
+      <button onclick="setRankPeriod(1)" data-period="1">1일</button>
+      <button onclick="setRankPeriod(5)" data-period="5">1주</button>
+      <button onclick="setRankPeriod(22)" data-period="22" class="active">1개월</button>
+      <button onclick="setRankPeriod(66)" data-period="66">1분기</button>
+      <input type="number" id="customPeriod" placeholder="N일" min="1" max="999" style="width:70px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:13px;text-align:center;">
+      <button onclick="applyCustomPeriod()">적용</button>
+    </div>
+    <div class="rank-period-info" id="rankPeriodInfo"></div>
+    <div class="rank-grid" id="rankGrid"></div>
+  </div>
+
+  <div id="noDataMsg" style="display:none;">데이터를 로딩 중입니다...</div>
+</div>
+
+<script>
+let DATA = null;
+let tickerChart = null;
+let dateChart = null;
+let stackChart = null;
+let currentDateIdx = -1;
+let stackRangeDays = 365;
+let selectedDate = null;
+
+const STACK_COLORS = [
+  '#58a6ff','#3fb950','#d29922','#f85149','#bc8cff',
+  '#f78166','#79c0ff','#56d364','#e3b341','#ff7b72',
+  '#d2a8ff','#ffa657','#7ee787','#a5d6ff','#ffd8b5',
+  '#b1bac4','#ff9bce','#76e3ea','#cea5fb','#fab387',
+];
+
+function loadData() {
+  if (typeof DASHBOARD_DATA !== 'undefined') {
+    DATA = DASHBOARD_DATA;
+    document.getElementById('noDataMsg').style.display = 'none';
+    initUI();
+  } else {
+    document.getElementById('noDataMsg').style.display = 'block';
+    document.getElementById('noDataMsg').textContent = '데이터 로딩 실패: dashboard_data.js 파일을 찾을 수 없습니다.';
+  }
+}
+
+function initUI() {
+  const o = DATA.overview;
+  document.getElementById('statsBar').innerHTML = `
+    <div class="stat-card"><div class="value">${o.total_days}</div><div class="label">데이터 일수</div></div>
+    <div class="stat-card"><div class="value">${o.unique_tickers}</div><div class="label">고유 종목 수</div></div>
+    <div class="stat-card"><div class="value">${o.date_range[0]}</div><div class="label">시작일</div></div>
+    <div class="stat-card"><div class="value">${o.date_range[1]}</div><div class="label">최신일</div></div>
+  `;
+
+  const sel = document.getElementById('tickerSelect');
+  const sorted = Object.entries(DATA.tickers).sort((a,b) => b[1].days_held - a[1].days_held);
+  for (const [t, d] of sorted) {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = `${t} — ${d.name} (${d.days_held}일)`;
+    sel.appendChild(opt);
+  }
+
+  const dateInput = document.getElementById('dateInput');
+  dateInput.value = DATA.dates[DATA.dates.length - 1];
+  dateInput.min = DATA.dates[0];
+  dateInput.max = DATA.dates[DATA.dates.length - 1];
+
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+      if (tab.dataset.tab === 'rank' && document.getElementById('rankGrid').innerHTML === '') {
+        renderRankings(currentRankPeriod);
+      }
+    });
+  });
+}
+
+function searchTicker() {
+  const ticker = document.getElementById('tickerSelect').value;
+  if (!ticker || !DATA.tickers[ticker]) return;
+  const d = DATA.tickers[ticker];
+
+  let returnPct = null;
+  if (d.prices.length >= 2) {
+    const first = d.prices[0][1];
+    const last = d.prices[d.prices.length - 1][1];
+    returnPct = ((last / first - 1) * 100).toFixed(1);
+  }
+
+  const lastQty = d.quantities.length > 0 ? d.quantities[d.quantities.length - 1][1] : 0;
+  const firstQty = d.quantities.length > 0 ? d.quantities[0][1] : 0;
+  const qtyChange = lastQty - firstQty;
+
+  const infoEl = document.getElementById('tickerInfo');
+  infoEl.style.display = 'flex';
+  infoEl.innerHTML = `
+    <div class="info-card"><div class="ic-label">종목명</div><div class="ic-value">${d.name}</div></div>
+    <div class="info-card"><div class="ic-label">편입일</div><div class="ic-value">${d.first_date}</div></div>
+    <div class="info-card"><div class="ic-label">보유 일수</div><div class="ic-value">${d.days_held}일</div></div>
+    <div class="info-card"><div class="ic-label">현재 수량</div><div class="ic-value">${lastQty.toLocaleString()}주</div></div>
+    <div class="info-card"><div class="ic-label">수량 변화</div><div class="ic-value ${qtyChange >= 0 ? 'green' : 'red'}">${qtyChange > 0 ? '+' : ''}${qtyChange.toLocaleString()}주</div></div>
+    <div class="info-card"><div class="ic-label">평균 비중</div><div class="ic-value">${d.avg_weight}%</div></div>
+    <div class="info-card"><div class="ic-label">최대 비중</div><div class="ic-value">${d.max_weight}%</div></div>
+    ${returnPct !== null ? `<div class="info-card"><div class="ic-label">보유기간 수익률</div><div class="ic-value ${parseFloat(returnPct) >= 0 ? 'green' : 'red'}">${returnPct > 0 ? '+' : ''}${returnPct}%</div></div>` : ''}
+  `;
+
+  document.getElementById('tickerChartWrap').style.display = 'block';
+  currentTickerData = d;
+  renderTickerChart(ticker, d);
+}
+
+function renderTickerChart(ticker, d) {
+  if (tickerChart) tickerChart.destroy();
+
+  const weightData = d.weights.map(w => ({ x: w[0], y: w[1] }));
+  const priceData = d.prices.map(p => ({ x: p[0], y: p[1] }));
+  const qtyData = (d.quantities || []).map(q => ({ x: q[0], y: q[1] }));
+
+  const datasets = [
+    {
+      label: `${ticker} 비중 (%)`,
+      data: weightData,
+      borderColor: '#58a6ff',
+      backgroundColor: 'rgba(88,166,255,.1)',
+      fill: true,
+      yAxisID: 'y',
+      pointRadius: 0,
+      borderWidth: 2,
+      tension: 0.1,
+    }
+  ];
+
+  if (priceData.length > 0) {
+    datasets.push({
+      label: `${ticker} 종가 ($)`,
+      data: priceData,
+      borderColor: '#3fb950',
+      backgroundColor: 'transparent',
+      yAxisID: 'y1',
+      pointRadius: 0,
+      borderWidth: 1.5,
+      borderDash: [4, 2],
+      tension: 0.1,
+    });
+  }
+
+  if (qtyData.length > 0 && qtyData.some(q => q.y > 0)) {
+    datasets.push({
+      label: `${ticker} 주식수`,
+      data: qtyData,
+      borderColor: '#d29922',
+      backgroundColor: 'rgba(210,153,34,.08)',
+      fill: true,
+      yAxisID: 'y2',
+      pointRadius: 0,
+      borderWidth: 2,
+      stepped: 'before',
+    });
+  }
+
+  const hasQty = datasets.some(ds => ds.yAxisID === 'y2');
+
+  const ctx = document.getElementById('tickerChart').getContext('2d');
+  tickerChart = new Chart(ctx, {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: '#e6edf3', font: { size: 12 } } },
+        tooltip: {
+          backgroundColor: '#161b22',
+          borderColor: '#30363d',
+          borderWidth: 1,
+          titleColor: '#e6edf3',
+          bodyColor: '#e6edf3',
+          callbacks: {
+            label: (ctx) => {
+              const v = ctx.parsed.y;
+              if (ctx.dataset.yAxisID === 'y') return `비중: ${v.toFixed(2)}%`;
+              if (ctx.dataset.yAxisID === 'y1') return `종가: $${v.toFixed(2)}`;
+              return `주식수: ${v.toLocaleString()}주`;
+            }
+          }
+        },
+        zoom: {
+          pan: { enabled: true, mode: 'x', modifierKey: null },
+          zoom: {
+            wheel: { enabled: true, speed: 0.1 },
+            pinch: { enabled: true },
+            mode: 'x',
+          },
+        },
+      },
+      scales: {
+        x: {
+          type: 'time',
+          time: { unit: 'month', tooltipFormat: 'yyyy-MM-dd' },
+          ticks: { color: '#8b949e', maxTicksLimit: 16 },
+          grid: { color: 'rgba(48,54,61,.5)' },
+        },
+        y: {
+          position: 'left',
+          title: { display: true, text: '비중 (%)', color: '#58a6ff' },
+          ticks: { color: '#58a6ff', callback: v => v.toFixed(1) + '%' },
+          grid: { color: 'rgba(48,54,61,.3)' },
+          min: 0,
+        },
+        y1: {
+          position: 'right',
+          title: { display: true, text: '종가 (USD)', color: '#3fb950' },
+          ticks: { color: '#3fb950', callback: v => '$' + v.toFixed(0) },
+          grid: { drawOnChartArea: false },
+        },
+        y2: {
+          display: hasQty,
+          position: 'right',
+          title: { display: true, text: '주식수', color: '#d29922' },
+          ticks: { color: '#d29922', callback: v => v.toLocaleString() },
+          grid: { drawOnChartArea: false },
+          beginAtZero: true,
+        },
+      }
+    }
+  });
+}
+
+function findClosestDate(dateStr) {
+  if (DATA.snapshots[dateStr]) return dateStr;
+  let best = DATA.dates[0];
+  let bestDiff = Infinity;
+  const target = new Date(dateStr).getTime();
+  for (const d of DATA.dates) {
+    const diff = Math.abs(new Date(d).getTime() - target);
+    if (diff < bestDiff) { bestDiff = diff; best = d; }
+  }
+  return best;
+}
+
+function searchDate(override) {
+  const dateStr = override || document.getElementById('dateInput').value;
+  const actual = findClosestDate(dateStr);
+  document.getElementById('dateInput').value = actual;
+  currentDateIdx = DATA.dates.indexOf(actual);
+
+  const snap = DATA.snapshots[actual];
+  if (!snap) return;
+
+  const equities = snap.filter(s => s.ticker !== '현금' && !s.name.includes('Index'));
+  const cash = snap.find(s => s.ticker === '현금');
+  const futures = snap.find(s => s.name && s.name.includes('Index'));
+
+  const infoEl = document.getElementById('dateInfo');
+  infoEl.style.display = 'flex';
+  infoEl.innerHTML = `
+    <div class="info-card"><div class="ic-label">날짜</div><div class="ic-value">${actual}</div></div>
+    <div class="info-card"><div class="ic-label">주식 종목 수</div><div class="ic-value">${equities.length}개</div></div>
+    <div class="info-card"><div class="ic-label">주식 합산 비중</div><div class="ic-value">${equities.reduce((s,e)=>s+e.weight,0).toFixed(1)}%</div></div>
+    <div class="info-card"><div class="ic-label">현금 비중</div><div class="ic-value">${cash ? cash.weight.toFixed(2) : 0}%</div></div>
+    ${futures ? `<div class="info-card"><div class="ic-label">선물 비중</div><div class="ic-value">${futures.weight.toFixed(2)}%</div></div>` : ''}
+  `;
+
+  document.getElementById('dateChartWrap').style.display = 'block';
+  document.getElementById('barLegend').style.display = 'flex';
+  renderDateChart(actual, snap);
+
+  selectedDate = actual;
+  document.getElementById('stackChartWrap').style.display = 'block';
+  renderStackChart();
+}
+
+function renderDateChart(dateStr, snap) {
+  if (dateChart) dateChart.destroy();
+
+  const sorted = [...snap].sort((a, b) => b.weight - a.weight);
+  const labels = sorted.map(s => s.ticker);
+  const values = sorted.map(s => s.weight);
+  const colors = sorted.map(s => {
+    if (s.ticker === '현금') return '#d29922';
+    if (s.name && s.name.includes('Index')) return '#8b949e';
+    return '#58a6ff';
+  });
+  const tooltipData = sorted;
+
+  const ctx = document.getElementById('dateChart').getContext('2d');
+  const barHeight = Math.max(sorted.length * 24, 400);
+  ctx.canvas.style.height = barHeight + 'px';
+  ctx.canvas.height = barHeight;
+
+  dateChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: colors,
+        borderColor: colors.map(c => c),
+        borderWidth: 1,
+        borderRadius: 3,
+        barThickness: 18,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#161b22',
+          borderColor: '#30363d',
+          borderWidth: 1,
+          titleColor: '#e6edf3',
+          bodyColor: '#e6edf3',
+          callbacks: {
+            title: (items) => {
+              const i = items[0].dataIndex;
+              const d = tooltipData[i];
+              return `${d.ticker} — ${d.name}`;
+            },
+            label: (item) => {
+              const i = item.dataIndex;
+              const d = tooltipData[i];
+              const lines = [`비중: ${d.weight.toFixed(2)}%`];
+              if (d.close_usd) lines.push(`종가: $${d.close_usd.toFixed(2)}`);
+              if (d.quantity) lines.push(`수량: ${d.quantity.toLocaleString()}주`);
+              return lines;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          title: { display: true, text: '비중 (%)', color: '#8b949e' },
+          ticks: { color: '#8b949e', callback: v => v + '%' },
+          grid: { color: 'rgba(48,54,61,.3)' },
+        },
+        y: {
+          ticks: { color: '#e6edf3', font: { size: 11 } },
+          grid: { display: false },
+        }
+      }
+    }
+  });
+}
+
+function navDate(dir) {
+  if (currentDateIdx < 0) currentDateIdx = DATA.dates.length - 1;
+  currentDateIdx = Math.max(0, Math.min(DATA.dates.length - 1, currentDateIdx + dir));
+  searchDate(DATA.dates[currentDateIdx]);
+}
+
+// --- Zoom range helpers ---
+let currentTickerData = null;
+
+function setRange(days) {
+  document.querySelectorAll('#rangeBtns button[data-range]').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector(`#rangeBtns button[data-range="${days}"]`);
+  if (btn) btn.classList.add('active');
+
+  if (!tickerChart || !currentTickerData) return;
+  if (days === 0) {
+    tickerChart.options.scales.x.min = undefined;
+    tickerChart.options.scales.x.max = undefined;
+    tickerChart.update();
+    return;
+  }
+  const lastDate = new Date(currentTickerData.last_date);
+  const startDate = new Date(lastDate);
+  startDate.setDate(startDate.getDate() - days);
+  tickerChart.options.scales.x.min = startDate.toISOString().slice(0, 10);
+  tickerChart.options.scales.x.max = lastDate.toISOString().slice(0, 10);
+  tickerChart.update();
+}
+
+function resetZoom() {
+  if (!tickerChart) return;
+  tickerChart.options.scales.x.min = undefined;
+  tickerChart.options.scales.x.max = undefined;
+  tickerChart.update();
+  document.querySelectorAll('#rangeBtns button[data-range]').forEach(b => b.classList.remove('active'));
+  document.querySelector('#rangeBtns button[data-range="0"]').classList.add('active');
+}
+
+// --- Ranking tab ---
+let currentRankPeriod = 22;
+
+function setRankPeriod(days) {
+  currentRankPeriod = days;
+  document.querySelectorAll('#periodBtns button').forEach(b => b.classList.remove('active'));
+  document.querySelector(`#periodBtns button[data-period="${days}"]`).classList.add('active');
+  renderRankings(days);
+}
+
+function applyCustomPeriod() {
+  const v = parseInt(document.getElementById('customPeriod').value);
+  if (!v || v < 1) return;
+  document.querySelectorAll('#periodBtns button[data-period]').forEach(b => b.classList.remove('active'));
+  currentRankPeriod = v;
+  renderRankings(v);
+}
+
+function renderRankings(periodDays) {
+  const dates = DATA.dates;
+  const endIdx = dates.length - 1;
+  const startIdx = Math.max(0, endIdx - periodDays);
+  const endDate = dates[endIdx];
+  const startDate = dates[startIdx];
+
+  document.getElementById('rankPeriodInfo').textContent = `기간: ${startDate} → ${endDate} (${endIdx - startIdx}영업일)`;
+
+  const endSnap = DATA.snapshots[endDate] || [];
+  const startSnap = DATA.snapshots[startDate] || [];
+
+  const endMap = {};
+  for (const s of endSnap) endMap[s.ticker] = s;
+  const startMap = {};
+  for (const s of startSnap) startMap[s.ticker] = s;
+
+  const allTickers = new Set([...Object.keys(endMap), ...Object.keys(startMap)]);
+  const changes = [];
+
+  for (const t of allTickers) {
+    if (t === '현금' || (endMap[t] && endMap[t].name && endMap[t].name.includes('Index')) || (startMap[t] && startMap[t].name && startMap[t].name.includes('Index'))) continue;
+
+    const endW = endMap[t] ? endMap[t].weight : 0;
+    const startW = startMap[t] ? startMap[t].weight : 0;
+    const endQ = endMap[t] ? (endMap[t].quantity || 0) : 0;
+    const startQ = startMap[t] ? (startMap[t].quantity || 0) : 0;
+    const name = (endMap[t] || startMap[t]).name || t;
+
+    const wChange = endW - startW;
+    const qChange = endQ - startQ;
+    const qPct = startQ > 0 ? ((endQ - startQ) / startQ * 100) : (endQ > 0 ? 100 : 0);
+
+    changes.push({ ticker: t, name, endW, startW, wChange, endQ, startQ, qChange, qPct });
+  }
+
+  const qtyUp = [...changes].filter(c => c.qChange > 0).sort((a, b) => b.qPct - a.qPct).slice(0, 15);
+  const qtyDn = [...changes].filter(c => c.qChange < 0).sort((a, b) => a.qPct - b.qPct).slice(0, 15);
+  const wUp = [...changes].filter(c => c.wChange > 0).sort((a, b) => b.wChange - a.wChange).slice(0, 15);
+  const wDn = [...changes].filter(c => c.wChange < 0).sort((a, b) => a.wChange - b.wChange).slice(0, 15);
+
+  function buildTable(items, mode) {
+    if (items.length === 0) return '<p style="color:var(--muted);font-size:13px;">해당 기간 데이터 없음</p>';
+    let html = '<table class="rank-table"><thead><tr><th>#</th><th>종목</th>';
+    if (mode === 'qty') {
+      html += '<th style="text-align:right;">수량 변화</th><th style="text-align:right;">변화율</th>';
+    } else {
+      html += '<th style="text-align:right;">비중 변화</th><th style="text-align:right;">현재 비중</th>';
+    }
+    html += '</tr></thead><tbody>';
+    items.forEach((c, i) => {
+      const cls = mode === 'qty' ? (c.qChange > 0 ? 'val-up' : 'val-dn') : (c.wChange > 0 ? 'val-up' : 'val-dn');
+      html += `<tr><td>${i + 1}</td><td title="${c.name}">${c.ticker}</td>`;
+      if (mode === 'qty') {
+        html += `<td style="text-align:right;" class="${cls}">${c.qChange > 0 ? '+' : ''}${c.qChange.toLocaleString()}주</td>`;
+        html += `<td style="text-align:right;" class="${cls}">${c.qPct > 0 ? '+' : ''}${c.qPct.toFixed(1)}%</td>`;
+      } else {
+        html += `<td style="text-align:right;" class="${cls}">${c.wChange > 0 ? '+' : ''}${c.wChange.toFixed(2)}%p</td>`;
+        html += `<td style="text-align:right;">${c.endW.toFixed(2)}%</td>`;
+      }
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    return html;
+  }
+
+  document.getElementById('rankGrid').innerHTML = `
+    <div class="rank-card">
+      <h3><span class="arrow-up">▲</span> 주식수 증가 TOP 15</h3>
+      ${buildTable(qtyUp, 'qty')}
+    </div>
+    <div class="rank-card">
+      <h3><span class="arrow-dn">▼</span> 주식수 감소 TOP 15</h3>
+      ${buildTable(qtyDn, 'qty')}
+    </div>
+    <div class="rank-card">
+      <h3><span class="arrow-up">▲</span> 비중 증가 TOP 15</h3>
+      ${buildTable(wUp, 'weight')}
+    </div>
+    <div class="rank-card">
+      <h3><span class="arrow-dn">▼</span> 비중 감소 TOP 15</h3>
+      ${buildTable(wDn, 'weight')}
+    </div>
+  `;
+}
+
+// --- Stack chart (Holdings composition) ---
+function setStackRange(days) {
+  stackRangeDays = days;
+  document.querySelectorAll('#stackRangeBtns button').forEach(b => b.classList.remove('active'));
+  // no data-range attr on these, just toggle by event target
+  event.target.classList.add('active');
+  renderStackChart();
+}
+
+function renderStackChart() {
+  if (stackChart) stackChart.destroy();
+  if (!DATA) return;
+
+  const topN = parseInt(document.getElementById('stackTopN').value) || 15;
+  const allDates = DATA.dates;
+
+  let dates = allDates;
+  if (stackRangeDays > 0) {
+    const endDate = new Date(allDates[allDates.length - 1]);
+    const startDate = new Date(endDate);
+    startDate.setDate(startDate.getDate() - stackRangeDays);
+    const startStr = startDate.toISOString().slice(0, 10);
+    dates = allDates.filter(d => d >= startStr);
+  }
+
+  let sampleDates = dates;
+  if (dates.length > 300) {
+    const step = Math.ceil(dates.length / 300);
+    sampleDates = dates.filter((_, i) => i % step === 0);
+    if (sampleDates[sampleDates.length - 1] !== dates[dates.length - 1])
+      sampleDates.push(dates[dates.length - 1]);
+  }
+
+  // 1) 매일의 실제 top N 을 구하고, 등장 빈도 집계
+  const tickerFreq = {};
+  const dailyRank = {};  // date → [{ticker, weight, name}, ...]
+  for (const d of sampleDates) {
+    const snap = DATA.snapshots[d];
+    if (!snap) { dailyRank[d] = []; continue; }
+    const equities = snap
+      .filter(s => s.ticker !== '현금' && !(s.name && s.name.includes('Index')))
+      .sort((a, b) => b.weight - a.weight);
+    const topSlice = equities.slice(0, topN);
+    dailyRank[d] = equities; // 전체 저장 (tooltip용)
+    for (const s of topSlice) {
+      tickerFreq[s.ticker] = (tickerFreq[s.ticker] || 0) + 1;
+    }
+  }
+
+  // 2) 색상 할당: top N에 자주 등장하는 순으로 (최대 40개, 나머지 → 기타)
+  const maxColors = Math.min(topN * 2, 40);
+  const colorTickers = Object.entries(tickerFreq)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, maxColors)
+    .map(([t]) => t);
+  const colorSet = new Set(colorTickers);
+
+  // 3) 매일 실제 top N 기준으로 데이터 구성
+  const seriesMap = {};
+  for (const t of colorTickers) seriesMap[t] = [];
+  const othersData = [];
+
+  for (const d of sampleDates) {
+    const snap = DATA.snapshots[d];
+    if (!snap) {
+      for (const t of colorTickers) seriesMap[t].push(0);
+      othersData.push(0);
+      continue;
+    }
+    const equities = dailyRank[d];
+    const dailyTopSet = new Set(equities.slice(0, topN).map(s => s.ticker));
+    const snapMap = {};
+    let totalEquity = 0;
+    for (const s of equities) {
+      snapMap[s.ticker] = s.weight;
+      totalEquity += s.weight;
+    }
+
+    let coloredSum = 0;
+    for (const t of colorTickers) {
+      if (dailyTopSet.has(t)) {
+        const w = snapMap[t] || 0;
+        seriesMap[t].push(w);
+        coloredSum += w;
+      } else {
+        seriesMap[t].push(0);
+      }
+    }
+    othersData.push(Math.max(0, totalEquity - coloredSum));
+  }
+
+  const datasets = colorTickers.map((t, i) => ({
+    label: t,
+    data: seriesMap[t],
+    backgroundColor: STACK_COLORS[i % STACK_COLORS.length] + '99',
+    borderColor: STACK_COLORS[i % STACK_COLORS.length],
+    borderWidth: 0.5,
+    fill: true,
+    pointRadius: 0,
+    tension: 0.2,
+  }));
+  datasets.push({
+    label: '기타',
+    data: othersData,
+    backgroundColor: 'rgba(139,148,158,.3)',
+    borderColor: '#8b949e',
+    borderWidth: 0.5,
+    fill: true,
+    pointRadius: 0,
+    tension: 0.2,
+  });
+
+  // dailyRank을 클로저로 캡처해서 tooltip에서 사용
+  const _dailyRank = dailyRank;
+  const _sampleDates = sampleDates;
+  const _topN = topN;
+
+  const ctx = document.getElementById('stackChart').getContext('2d');
+  stackChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: sampleDates, datasets },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { color: '#e6edf3', font: { size: 11 }, boxWidth: 12, padding: 8 },
+        },
+        tooltip: {
+          backgroundColor: '#161b22ee',
+          borderColor: '#30363d',
+          borderWidth: 1,
+          titleColor: '#e6edf3',
+          bodyColor: '#e6edf3',
+          bodyFont: { size: 11 },
+          maxHeight: 400,
+          callbacks: {
+            title: (items) => {
+              if (!items.length) return '';
+              return items[0].label;
+            },
+            label: () => null,
+            afterBody: (items) => {
+              if (!items.length) return [];
+              const d = _sampleDates[items[0].dataIndex];
+              const ranked = _dailyRank[d];
+              if (!ranked || !ranked.length) return ['데이터 없음'];
+              const lines = [];
+              const top = ranked.slice(0, _topN);
+              for (let i = 0; i < top.length; i++) {
+                const s = top[i];
+                lines.push(`#${i+1}  ${s.ticker}  ${s.weight.toFixed(2)}%`);
+              }
+              return lines;
+            }
+          }
+        },
+        zoom: {
+          pan: { enabled: true, mode: 'x' },
+          zoom: {
+            wheel: { enabled: true, speed: 0.1 },
+            pinch: { enabled: true },
+            mode: 'x',
+          },
+        },
+      },
+      scales: {
+        x: {
+          type: 'category',
+          ticks: {
+            color: '#8b949e',
+            maxTicksLimit: 14,
+            callback: function(val, i) {
+              const d = this.getLabelForValue(val);
+              return d ? d.slice(2, 7) : '';
+            }
+          },
+          grid: { color: 'rgba(48,54,61,.3)' },
+        },
+        y: {
+          stacked: true,
+          title: { display: true, text: '비중 (%)', color: '#8b949e' },
+          ticks: { color: '#8b949e', callback: v => v + '%' },
+          grid: { color: 'rgba(48,54,61,.3)' },
+          min: 0,
+        }
+      }
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', loadData);
+</script>
+</body>
+</html>
