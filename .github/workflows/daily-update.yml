@@ -2,8 +2,11 @@ name: Daily ETF Data Update
 
 on:
   schedule:
-    # UTC 22:00 Mon-Fri = KST 07:00 (미장 마감 후)
-    - cron: "0 22 * * 1-5"
+    # 정각(:00) 슬롯은 전세계 cron이 몰려 지연/드롭됨 → 어중간한 분 + 이중화
+    # 1차: UTC 22:27 Mon-Fri = KST 07:27 (미장 마감 후)
+    - cron: "27 22 * * 1-5"
+    # 백업: UTC 23:43 Mon-Fri = KST 08:43 (1차 드롭 대비, 변경분만 커밋되어 중복 무해)
+    - cron: "43 23 * * 1-5"
   workflow_dispatch: # 수동 실행 버튼
 
 jobs:
